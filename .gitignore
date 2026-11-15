@@ -1,0 +1,5 @@
+playtest.py
+playtest-*.py
+out/
+node_modules/
+*.log
