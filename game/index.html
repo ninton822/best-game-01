@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emberwatch — a tower defence game</title>
+<style>
+  :root {
+    --canvas: #0b1026;
+    --surface: #1a1f2e;
+    --panel: #232838;
+    --hairline: #3a4066;
+    --ink: #ece5d8;
+    --muted: #8d93a8;
+    --accent: #ffb347;
+    --danger: #e05b4e;
+    --teal: #2e5f6b;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  #game { width: min(100vw, 177.78vh); height: min(56.25vw, 100vh); display: block; background: #10142a; }
+  #hud {
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 18px; align-items: center;
+    padding: 10px 18px; background: rgba(16, 18, 28, 0.88); border: 1px solid var(--hairline);
+    border-top: 0; border-radius: 0 0 8px 8px; font-family: var(--font-readout); font-size: 15px;
+    z-index: 5; white-space: nowrap;
+  }
+  #hud .gold { color: var(--accent); font-weight: 700; }
+  #hud .lives.low { color: var(--danger); font-weight: 700; }
+  #hud button, .panel button {
+    font: inherit; font-size: 14px; font-weight: 600; padding: 7px 13px;
+    background: var(--accent); color: #1a1408; border: 0; border-radius: 6px; cursor: pointer;
+  }
+  #hud button:hover, .panel button:hover { filter: brightness(1.1); }
+  #hud button:disabled { opacity: 0.45; cursor: default; filter: none; }
+  #hud button.ghost, .panel button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--hairline); }
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(12, 14, 24, 0.82); z-index: 10; }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(620px, 100%); max-height: 92vh; overflow: auto; padding: 28px 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; }
+  .panel h1 { margin: 0 0 4px; font-size: 38px; letter-spacing: 0.01em; }
+  .panel h1 .accent { color: var(--accent); }
+  .panel h2 { margin: 0 0 8px; font-size: 24px; }
+  .panel h2.win { color: #7ec850; }
+  .panel h2.lose { color: var(--danger); }
+  .panel p { color: var(--muted); font-size: 15px; line-height: 1.55; margin: 6px 0; }
+  .panel p b { color: var(--ink); font-weight: 600; }
+  .panel .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 14px; margin: 12px 0; }
+  .panel .keys kbd { font-family: var(--font-readout); background: #10121c; border: 1px solid var(--hairline); border-radius: 3px; padding: 1px 7px; font-size: 12px; }
+  .panel button { margin-top: 10px; }
+  .tag { display: inline-block; font-size: 11px; letter-spacing: 0.14em; color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 3px 8px; margin-bottom: 10px; }
+  #end-stats { font-family: var(--font-readout); font-size: 14px; color: var(--muted); margin: 10px 0; line-height: 1.8; }
+  #end-stats b { color: var(--ink); }
+  .small { font-size: 12px; color: var(--muted); }
+  .dock {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    width: min(760px, 96vw); background: rgba(26, 31, 46, 0.94); border: 1px solid var(--hairline);
+    border-radius: 8px; padding: 12px 14px; z-index: 6;
+  }
+  .dock[hidden] { display: none; }
+  .dock h3 { margin: 0 0 8px; font-size: 14px; color: var(--muted); letter-spacing: 0.08em; }
+  .dock h3 b { color: var(--ink); }
+  #build-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .build-card { border: 1px solid var(--hairline); border-radius: 6px; padding: 9px 10px; cursor: pointer; background: #1a1e2e; }
+  .build-card:hover { border-color: var(--accent); }
+  .build-card.cant { opacity: 0.45; cursor: default; }
+  .build-card .name { font-weight: 700; font-size: 13px; }
+  .build-card .name span { float: right; color: var(--accent); font-family: var(--font-readout); }
+  .build-card .desc { font-size: 11px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+  .build-card .key { font-family: var(--font-readout); font-size: 11px; color: var(--muted); }
+  #tower-stats { font-family: var(--font-readout); font-size: 13px; color: var(--muted); margin: 6px 0 4px; }
+  .dock .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="game" width="1280" height="720" aria-label="Emberwatch: defend the Ember flame from waves of ash creatures"></canvas></div>
+
+<div id="hud">
+  <span class="gold" id="hud-gold">200g</span>
+  <span class="lives" id="hud-lives">Ember 20/20</span>
+  <span id="hud-wave">Wave — / 15</span>
+  <span id="hud-foes">Build phase</span>
+  <span id="hud-score">Score 0</span>
+  <span id="hud-best">Best 0</span>
+  <button id="btn-wave">Start wave 1</button>
+  <button id="btn-speed" class="ghost">Speed 1x</button>
+  <button id="btn-pause" class="ghost">Pause</button>
+  <button id="btn-mute" class="ghost">Mute</button>
+</div>
+
+<div class="dock" id="build-panel" hidden>
+  <h3>BUILD ON THIS PLOT — <b>click a tower, or press 1–4</b></h3>
+  <div id="build-grid">
+    <div class="build-card" data-type="spark">
+      <div class="name">Spark Turret <span class="cost">50g</span></div>
+      <div class="desc">Fast bolts, cheap and reliable.</div>
+      <div class="key">key 1</div>
+    </div>
+    <div class="build-card" data-type="frost">
+      <div class="name">Frost Spire <span class="cost">75g</span></div>
+      <div class="desc">Chills a pack: slows 35% and nips at it.</div>
+      <div class="key">key 2</div>
+    </div>
+    <div class="build-card" data-type="mortar">
+      <div class="name">Mortar <span class="cost">110g</span></div>
+      <div class="desc">Long-range shells that burst in a splash.</div>
+      <div class="key">key 3</div>
+    </div>
+    <div class="build-card" data-type="coil">
+      <div class="name">Storm Coil <span class="cost">160g</span></div>
+      <div class="desc">Lightning that jumps between creatures.</div>
+      <div class="key">key 4</div>
+    </div>
+  </div>
+  <div class="row"><button id="btn-close-panels" class="ghost">Close (Esc)</button></div>
+</div>
+
+<div class="dock" id="tower-panel" hidden>
+  <h3 id="tower-name">Spark Turret · Lv 1</h3>
+  <div id="tower-stats"></div>
+  <div class="row">
+    <button id="btn-upgrade">Upgrade</button>
+    <button id="btn-sell" class="ghost">Sell</button>
+    <button id="btn-close-panels2" class="ghost">Close (Esc)</button>
+  </div>
+</div>
+
+<div class="overlay" id="title-screen">
+  <div class="panel">
+    <div class="tag">TOWER DEFENCE</div>
+    <h1>Ember<span class="accent">watch</span></h1>
+    <p>You are the <b>Warden of the Ember</b> — the last beacon flame on the cliff. Waves of ash creatures march the winding road from the dark portals to your flame. Build towers on the stone plots, hold all <b>15 waves</b>, and keep the Ember alive.</p>
+    <p>Gold comes from every creature you fell and every wave you clear. Spend it well: a Spark Turret is cheap, a Storm Coil is ruinous, and the <b>Ash Titan</b> walks on waves 5, 10 and 15. <b>Cinderhides wear thick hide</b> that shrugs off small bolts — bring mortars and coils to crack their armour.</p>
+    <div class="keys">
+      <span><kbd>Mouse</kbd></span><span>Click a plot to build, click a tower to upgrade or sell</span>
+      <span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></span><span>Build Spark / Frost / Mortar / Coil on the selected plot</span>
+      <span><kbd>Space</kbd></span><span>Start the next wave</span>
+      <span><kbd>F</kbd></span><span>Toggle 2x speed</span>
+      <span><kbd>P</kbd></span><span>Pause</span>
+      <span><kbd>M</kbd></span><span>Mute</span>
+      <span><kbd>Esc</kbd></span><span>Close panel / deselect</span>
+    </div>
+    <button id="btn-play">Light the Ember — Play</button>
+    <p class="small">Fifteen waves. Twenty lives. One flame.</p>
+  </div>
+</div>
+
+<div class="overlay" id="end-screen" hidden>
+  <div class="panel">
+    <h2 id="end-title">The Ember Endures</h2>
+    <p id="end-sub"></p>
+    <div id="end-stats"></div>
+    <button id="btn-again">Play again</button>
+    <p class="small">Press Space or R to play again.</p>
+  </div>
+</div>
+
+<div class="overlay" id="pause-screen" hidden>
+  <div class="panel">
+    <h2>Paused</h2>
+    <p>The creatures wait. The Ember burns on.</p>
+    <button id="btn-resume">Resume</button>
+  </div>
+</div>
+
+<p id="status" role="status" aria-live="polite"></p>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
